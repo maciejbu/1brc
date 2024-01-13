@@ -1,21 +1,21 @@
 package dev.morling.onebrc;
 
-import java.io.IOException;
-import java.io.OutputStreamWriter;
-import java.io.UncheckedIOException;
-import java.io.Writer;
+import jdk.internal.util.ArraysSupport;
+
+import java.io.*;
 import java.lang.foreign.Arena;
 import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 public class CalculateAverage_maciej {
     private static final String FILE = "./measurements.txt";
+
 
     public static void main(String[] args) throws IOException {
         long start = System.nanoTime();
@@ -28,17 +28,15 @@ public class CalculateAverage_maciej {
         System.out.println("Took: " + diffMs);
     }
 
-    private enum ReadingMode {NAME, TEMPERATURE};
+    private enum ReadingMode {NAME, TEMPERATURE}
 
     public static void run(Path inputPath, Writer writer) {
         try (var file = FileChannel.open(inputPath, StandardOpenOption.READ);
              var arena = Arena.ofConfined()) {
             var memorySegment = file.map(FileChannel.MapMode.READ_ONLY, 0, file.size(), arena);
-            String name = null;
-            int sbPosition = 0;
             long temperatureBuffer = 0;
-            byte[] sb = new byte[100];
-            Map<String, Stats> data = new HashMap<>();
+            MyString stringBuffer = new MyString();
+            Map<MyString, Stats> data = new HashMap<>();
             var mode = ReadingMode.NAME;
             long byteSize = memorySegment.byteSize();
             boolean negative = false;
@@ -46,12 +44,9 @@ public class CalculateAverage_maciej {
                 byte b = memorySegment.get(ValueLayout.JAVA_BYTE, i);
                 if (b == ';') {
                     mode = ReadingMode.TEMPERATURE;
-                    name = new String(sb, 0, sbPosition);
-                    sbPosition = 0;
                 } else if (b == '\n') {
                     mode = ReadingMode.NAME;
-                    var stats = data.get(name);
-
+                    var stats = data.get(stringBuffer);
                     if(negative) {
                         temperatureBuffer *= -1;
                     }
@@ -62,7 +57,9 @@ public class CalculateAverage_maciej {
                         stats.sum = temperatureBuffer;
                         stats.min = temperatureBuffer;
                         stats.max = temperatureBuffer;
-                        data.put(name, stats);
+                        MyString key = new MyString();
+                        key.resetTo(stringBuffer);
+                        data.put(key, stats);
                     } else {
                         stats.count++;
                         stats.min = Math.min(stats.min, temperatureBuffer);
@@ -71,15 +68,14 @@ public class CalculateAverage_maciej {
                     }
                     temperatureBuffer = 0;
                     negative = false;
+                    stringBuffer.reset();
                 } else if(b == '.') {
                     if(mode == ReadingMode.NAME) {
-                        sb[sbPosition] = b;
-                        sbPosition++;
+                        stringBuffer.append(b);
                     }
                 } else if(b == '-') {
                     if(mode == ReadingMode.NAME) {
-                        sb[sbPosition] = b;
-                        sbPosition++;
+                        stringBuffer.append(b);
                     } else {
                         negative = true;
                     }
@@ -89,18 +85,18 @@ public class CalculateAverage_maciej {
                         int digit = b - (byte) '0';
                         temperatureBuffer += digit;
                     } else {
-                        sb[sbPosition] = b;
-                        sbPosition++;
+                        stringBuffer.append(b);
                     }
                 }
             }
 
             writer.write("{");
-            List<String> list = data.keySet().stream().sorted().toList();
-            int size = list.size();
-            for (String key : list) {
+
+            Map<String, Stats> result = new TreeMap<>(data.entrySet().stream().collect(Collectors.toMap(me -> me.getKey().toString(), me -> me.getValue())));
+            int size = result.size();
+            for (String key : result.keySet().stream().sorted().toList()) {
                 size--;
-                Stats stats = data.get(key);
+                Stats stats = result.get(key);
                 writer.write(key);
                 writer.write("=");
                 writer.write(String.format("%.1f", stats.min / 10.0));
@@ -112,7 +108,6 @@ public class CalculateAverage_maciej {
                     writer.write(", ");
                 }
             }
-            ;
             writer.write("}\n");
 
 
@@ -127,5 +122,57 @@ public class CalculateAverage_maciej {
         private long max;
         private long count;
         private long sum;
+    }
+
+    private static class MyString {
+        byte[] data = new byte[100];
+        int size;
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            MyString that = (MyString) o;
+            return size == that.size && Arrays.equals(data, 0, size,  that.data, 0, that.size);
+        }
+
+        @Override
+        public int hashCode() {
+            return switch (data.length) {
+                case 0 -> 1;
+                case 1 -> 31 + (int)data[0];
+                //default -> ArraysSupport.vectorizedHashCode(data, 0, size, 1, ArraysSupport.T_BYTE);
+               default -> {
+                    int result = 1;
+                    for (int i = 0; i < size; i++) {
+                        result = 31 * result + data[i];
+                    }
+                    yield result;
+                }
+            };
+        }
+
+        public void append(byte b) {
+            data[size] = b;
+            size++;
+        }
+
+        public void reset() {
+            this.size = 0;
+        }
+
+        public void resetTo(MyString that) {
+            this.size = that.size;
+            System.arraycopy(that.data, 0, this.data, 0, that.size);
+        }
+
+        @Override
+        public String toString() {
+            try {
+                return new String(data, 0, size, "UTF8");
+            } catch (UnsupportedEncodingException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 }
