@@ -1,15 +1,16 @@
 package dev.morling.onebrc;
 
-import jdk.internal.util.ArraysSupport;
-
 import java.io.*;
 import java.lang.foreign.Arena;
 import java.lang.foreign.ValueLayout;
-import java.lang.invoke.MethodHandle;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -92,7 +93,7 @@ public class CalculateAverage_maciej {
 
             writer.write("{");
 
-            Map<String, Stats> result = new TreeMap<>(data.entrySet().stream().collect(Collectors.toMap(me -> me.getKey().toString(), me -> me.getValue())));
+            Map<String, Stats> result = new TreeMap<>(data.entrySet().stream().collect(Collectors.toMap(me -> me.getKey().toString(), Map.Entry::getValue)));
             int size = result.size();
             for (String key : result.keySet().stream().sorted().toList()) {
                 size--;
@@ -168,11 +169,7 @@ public class CalculateAverage_maciej {
 
         @Override
         public String toString() {
-            try {
-                return new String(data, 0, size, "UTF8");
-            } catch (UnsupportedEncodingException e) {
-                throw new RuntimeException(e);
-            }
+            return new String(data, 0, size, StandardCharsets.UTF_8);
         }
     }
 }
