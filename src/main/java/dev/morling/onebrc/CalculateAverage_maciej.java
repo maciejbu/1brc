@@ -58,9 +58,7 @@ public class CalculateAverage_maciej {
                         stats.sum = temperatureBuffer;
                         stats.min = temperatureBuffer;
                         stats.max = temperatureBuffer;
-                        MyString key = new MyString();
-                        key.resetTo(stringBuffer);
-                        data.put(key, stats);
+                        data.put(stringBuffer.copy(), stats);
                     } else {
                         stats.count++;
                         stats.min = Math.min(stats.min, temperatureBuffer);
@@ -126,8 +124,18 @@ public class CalculateAverage_maciej {
     }
 
     private static class MyString {
-        byte[] data = new byte[100];
+        byte[] data;
         int size;
+
+        MyString() {
+            this.data = new byte[100];
+            this.size = 0;
+        }
+
+        MyString(byte[] data) {
+            this.data = data;
+            size = data.length;
+        }
 
         @Override
         public boolean equals(Object o) {
@@ -162,9 +170,8 @@ public class CalculateAverage_maciej {
             this.size = 0;
         }
 
-        public void resetTo(MyString that) {
-            this.size = that.size;
-            System.arraycopy(that.data, 0, this.data, 0, that.size);
+        public MyString copy() {
+            return new MyString(Arrays.copyOf(this.data, this.size));
         }
 
         @Override
